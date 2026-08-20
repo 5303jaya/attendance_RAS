@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -259,13 +261,14 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
       },
       // Seed demo data for every day from 1 Jun through 19 Aug (the day
       // before today) so the attendance chart/rings already have full
-      // history to show, using the same default present/late/absent split
-      // as _templateStudents, across all three sessions.
+      // history to show. Each day/session gets its own randomized (but
+      // deterministic) present/late/absent mix so no student is stuck at
+      // a fixed 0% or 100%.
       for (final date in _dateRange(DateTime(year, 6, 1), DateTime(year, 8, 19)))
         _dateKey(date): {
-          AttendanceSession.morning: _markedTemplateCopies(),
-          AttendanceSession.afternoon: _markedTemplateCopies(),
-          AttendanceSession.evening: _markedTemplateCopies(),
+          AttendanceSession.morning: _markedTemplateCopies(date, AttendanceSession.morning),
+          AttendanceSession.afternoon: _markedTemplateCopies(date, AttendanceSession.afternoon),
+          AttendanceSession.evening: _markedTemplateCopies(date, AttendanceSession.evening),
         },
     };
   }
@@ -277,13 +280,33 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     ];
   }
 
-  List<StudentRecord> _markedTemplateCopies() {
+  // Mostly Present with occasional Late/Absent, per student/day/session —
+  // seeded off the date + roll no. so results are varied but reproducible
+  // across hot restarts rather than a fixed status for the whole range.
+  List<StudentRecord> _markedTemplateCopies(DateTime date, AttendanceSession session) {
     return _templateStudents.map((s) {
       final copy = s.copy();
       copy.marked = true;
+      final seed = date.year * 10000 +
+          date.month * 100 +
+          date.day +
+          session.index * 31 +
+          s.rollNo.hashCode;
+      final roll = Random(seed).nextDouble();
+      if (roll < 0.82) {
+        copy.status = AttendanceStatus.present;
+        copy.reason = '';
+      } else if (roll < 0.93) {
+        copy.status = AttendanceStatus.late;
+        copy.reason = 'Bus was delayed';
+      } else {
+        copy.status = AttendanceStatus.absent;
+        copy.reason = 'Informed sick leave';
+      }
       return copy;
     }).toList();
   }
+
 
   List<StudentRecord> get _students {
     final dateKey = _dateKey(_selectedDate);
