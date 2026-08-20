@@ -472,10 +472,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
       context: context,
       builder: (context) => const _SuccessDialog(),
     );
-    // Once this session is fully marked, move straight to the next one
-    // (Morning -> Afternoon -> Evening) so only the relevant session is
-    // ever front-and-center. The completed one stays visible as a
-    // checked-off tab the staff can still tap back into.
+    
     final next = _nextSession(_selectedSession);
     if (next != null && mounted) {
       setState(() => _selectedSession = next);
@@ -941,9 +938,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     );
   }
 
-  // Morning / Afternoon / Evening selector. The active session is
-  // highlighted; a completed one (all students marked) shows a small check
-  // badge so staff can see progress at a glance and tap back into it.
+  
   Widget _sessionTabBar() {
     return Row(
       children: AttendanceSession.values.map((session) {
