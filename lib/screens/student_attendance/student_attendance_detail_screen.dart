@@ -8,11 +8,13 @@ import 'student_attendance_screen.dart';
 class StudentAttendanceDetailScreen extends StatefulWidget {
   final StudentRecord student;
   final List<AttendanceHistoryEntry> history;
+  final AttendanceStats? stats;
 
   const StudentAttendanceDetailScreen({
     super.key,
     required this.student,
     this.history = const [],
+    this.stats,
   });
 
   @override
@@ -20,17 +22,40 @@ class StudentAttendanceDetailScreen extends StatefulWidget {
 }
 
 class _StudentAttendanceDetailScreenState extends State<StudentAttendanceDetailScreen> {
-  // TODO: swap this for the student's real month-by-month present percentage
-  // once this screen is wired up to your backend. Values are 0-100.
   // Order matches the academic-year style range shown under the chart.
   static const List<String> _monthLabels = [
     'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr',
   ];
-  static const List<double> _monthlyPresentPercent = [
-    72, 80, 58, 65, 74, 88, 91, 84, 90, 95, 83,
-  ];
+  // Calendar month numbers (1-12) matching each entry in _monthLabels, used
+  // to pull the right value out of AttendanceStats.monthlyPresentPercent.
+  static const List<int> _monthNumbers = [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4];
 
   late int _selectedMonthIndex;
+
+  // Real present % per _monthLabels slot, from marked attendance. Months
+  // with no recorded data yet show as 0, same as an unreached future month.
+  List<double> get _monthlyPresentPercent {
+    final monthly = widget.stats?.monthlyPresentPercent ?? const {};
+    return [for (final m in _monthNumbers) monthly[m] ?? 0.0];
+  }
+
+  // Cumulative present/absent split from the start of the range (Jun) up
+  // through whichever month is currently selected on the chart — so the
+  // rings below always match "start to current month" instead of an
+  // all-time total that ignores which month you're looking at.
+  ({double present, double absent}) get _ringsForSelectedMonth {
+    final monthlyAttendance = widget.stats?.monthlyAttendance ?? const {};
+    int present = 0;
+    int total = 0;
+    for (int i = 0; i <= _selectedMonthIndex; i++) {
+      final month = monthlyAttendance[_monthNumbers[i]];
+      if (month == null) continue;
+      present += month.presentCount;
+      total += month.totalCount;
+    }
+    if (total == 0) return (present: 0.0, absent: 0.0);
+    return (present: present / total, absent: (total - present) / total);
+  }
 
   @override
   void initState() {
@@ -71,9 +96,10 @@ class _StudentAttendanceDetailScreenState extends State<StudentAttendanceDetailS
 
   @override
   Widget build(BuildContext context) {
-    const double totalAverage = 0.83;
-    const double present = 0.66;
-    const double absent = 0.23;
+    final rings = _ringsForSelectedMonth;
+    final double present = rings.present;
+    final double absent = rings.absent;
+    final double totalAverage = present;
     final student = widget.student;
     final history = widget.history;
 

@@ -21,6 +21,37 @@ class AttendanceHistoryEntry {
   });
 }
 
+/// Present/absent tally for a single calendar month, backing the detail
+/// screen's rings — stored as raw counts so multiple months can be summed
+/// together for a "start to current month" cumulative view.
+class MonthlyAttendance {
+  final int presentCount;
+  final int totalCount;
+
+  const MonthlyAttendance({required this.presentCount, required this.totalCount});
+}
+
+/// Real attendance figures for one student, derived from every marked
+/// record across all dates/sessions — replaces the detail screen's old
+/// hardcoded percentages.
+class AttendanceStats {
+  final double presentPercent; // 0-1, share of marked days present
+  final double absentPercent; // 0-1, share of marked days late or absent
+  // Present % per calendar month (1 = Jan ... 12 = Dec). Months with no
+  // marked records are simply absent from this map.
+  final Map<int, double> monthlyPresentPercent;
+  // Present/absent split per calendar month, so the rings can show a single
+  // month's figures instead of the all-time total. Also keyed 1-12.
+  final Map<int, MonthlyAttendance> monthlyAttendance;
+
+  const AttendanceStats({
+    required this.presentPercent,
+    required this.absentPercent,
+    required this.monthlyPresentPercent,
+    required this.monthlyAttendance,
+  });
+}
+
 class StudentRecord {
   final String name;
   final String rollNo;
@@ -221,11 +252,37 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   void initState() {
     super.initState();
     _selectedSession = _sessionForTime(DateTime.now());
+    final year = DateTime.now().year;
     _attendanceByDate = {
       _dateKey(DateTime.now()): {
         AttendanceSession.morning: _templateStudents.map((s) => s.copy()).toList(),
       },
+      // Seed demo data for every day from 1 Jun through 19 Aug (the day
+      // before today) so the attendance chart/rings already have full
+      // history to show, using the same default present/late/absent split
+      // as _templateStudents, across all three sessions.
+      for (final date in _dateRange(DateTime(year, 6, 1), DateTime(year, 8, 19)))
+        _dateKey(date): {
+          AttendanceSession.morning: _markedTemplateCopies(),
+          AttendanceSession.afternoon: _markedTemplateCopies(),
+          AttendanceSession.evening: _markedTemplateCopies(),
+        },
     };
+  }
+
+  // All calendar dates from [start] to [end], inclusive.
+  List<DateTime> _dateRange(DateTime start, DateTime end) {
+    return [
+      for (int i = 0; i <= end.difference(start).inDays; i++) start.add(Duration(days: i)),
+    ];
+  }
+
+  List<StudentRecord> _markedTemplateCopies() {
+    return _templateStudents.map((s) {
+      final copy = s.copy();
+      copy.marked = true;
+      return copy;
+    }).toList();
   }
 
   List<StudentRecord> get _students {
@@ -376,8 +433,49 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
         builder: (context) => StudentAttendanceDetailScreen(
           student: student,
           history: _historyFor(student.rollNo),
+          stats: _statsFor(student.rollNo),
         ),
       ),
+    );
+  }
+
+  // Tallies every marked record for this student across all dates/sessions
+  // into overall present/absent shares and a per-month present percentage.
+  AttendanceStats _statsFor(String rollNo) {
+    int present = 0;
+    int lateOrAbsent = 0;
+    final Map<int, List<bool>> presenceByMonth = {};
+
+    _attendanceByDate.forEach((date, sessionsForDate) {
+      sessionsForDate.forEach((session, list) {
+        for (final record in list) {
+          if (record.rollNo != rollNo || !record.marked) continue;
+          final isPresent = record.status == AttendanceStatus.present;
+          if (isPresent) {
+            present++;
+          } else {
+            lateOrAbsent++;
+          }
+          presenceByMonth.putIfAbsent(date.month, () => []).add(isPresent);
+        }
+      });
+    });
+
+    final total = present + lateOrAbsent;
+    return AttendanceStats(
+      presentPercent: total == 0 ? 0.0 : present / total,
+      absentPercent: total == 0 ? 0.0 : lateOrAbsent / total,
+      monthlyPresentPercent: {
+        for (final entry in presenceByMonth.entries)
+          entry.key: entry.value.where((p) => p).length / entry.value.length * 100,
+      },
+      monthlyAttendance: {
+        for (final entry in presenceByMonth.entries)
+          entry.key: MonthlyAttendance(
+            presentCount: entry.value.where((p) => p).length,
+            totalCount: entry.value.length,
+          ),
+      },
     );
   }
 
@@ -768,9 +866,11 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                                                     ),
                                                   ),
                                                   const SizedBox(width: 8),
-                                                  // Before a choice is made: show all three options.
-                                                  // After: collapse down to just the chosen one.
-                                                  if (_isToday && !student.marked)
+                                                  // Before a choice is made: show all three options,
+                                                  // no matter which date is selected (today or a
+                                                  // past day being backfilled). After: collapse
+                                                  // down to just the chosen one.
+                                                  if (!student.marked)
                                                     _quickSelectButtons(student)
                                                   else
                                                     GestureDetector(
